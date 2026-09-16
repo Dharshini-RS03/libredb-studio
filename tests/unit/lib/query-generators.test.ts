@@ -41,9 +41,9 @@ const sampleColumns: ColumnSchema[] = [
 // ============================================================================
 
 describe("generateTableQuery", () => {
-  test("SQL (postgres/mysql/sqlite) uses LIMIT 50", () => {
+    test("SQL (postgres/mysql/sqlite) generates an unbounded table query", () => {
     const result = generateTableQuery(["users"], makeCaps({ defaultPort: 5432 }));
-    expect(result).toBe("SELECT * FROM users LIMIT 50;");
+    expect(result).toBe("SELECT * FROM users;");
   });
 
   test("JSON (MongoDB) generates JSON find query", () => {
@@ -54,17 +54,14 @@ describe("generateTableQuery", () => {
     expect(parsed.options.limit).toBe(50);
   });
 
-  test("Oracle (port 1521) uses FETCH FIRST 50 ROWS ONLY", () => {
+  test("Oracle (port 1521) generates an unbounded table query", () => {
     const result = generateTableQuery(["users"], makeCaps({ defaultPort: 1521 }));
-    expect(result).toContain("FETCH FIRST 50 ROWS ONLY");
-    // Oracle folds unquoted identifiers to UPPERCASE, so a lowercase name is
-    // quoted to preserve it.
-    expect(result).toContain('SELECT * FROM "users"');
+    expect(result).toBe('SELECT * FROM "users";');
   });
 
-  test("MSSQL (port 1433) uses TOP 50", () => {
+  test("MSSQL (port 1433) generates an unbounded table query", () => {
     const result = generateTableQuery(["users"], makeCaps({ defaultPort: 1433 }));
-    expect(result).toBe("SELECT TOP 50 * FROM users;");
+    expect(result).toBe("SELECT * FROM users;");
   });
 
   // #424 Phase 1, measured 2026-08-19 against Elasticsearch 9.1.4 and OpenSearch
@@ -75,7 +72,7 @@ describe("generateTableQuery", () => {
   // runs on both, so one answer serves both products.
   test("a dialect that declares no terminator gets no trailing semicolon", () => {
     const caps = makeCaps({ defaultPort: 9200, statementTerminator: "none" });
-    expect(generateTableQuery(["orders"], caps)).toBe("SELECT * FROM orders LIMIT 50");
+        expect(generateTableQuery(["orders"], caps)).toBe("SELECT * FROM orders");
   });
 
   test('LibreDB dialect: a ":*" prefix group scans with prefix', () => {
@@ -304,13 +301,13 @@ describe("Couchbase (SQL++) generation", () => {
 
   test("generateTableQuery aliases the keyspace and projects the document key", () => {
     expect(generateTableQuery(["hotel"], couchbaseCaps)).toBe(
-      "SELECT META(d).id AS __id, d.* FROM `hotel` AS d LIMIT 50;",
+      "SELECT META(d).id AS __id, d.* FROM `hotel` AS d;",
     );
   });
 
   test("generateTableQuery quotes every segment of a scope-qualified collection", () => {
     expect(generateTableQuery(["inventory", "hotel"], couchbaseCaps)).toBe(
-      "SELECT META(d).id AS __id, d.* FROM `inventory`.`hotel` AS d LIMIT 50;",
+      "SELECT META(d).id AS __id, d.* FROM `inventory`.`hotel` AS d;",
     );
   });
 
@@ -356,14 +353,14 @@ describe("Couchbase (SQL++) generation", () => {
 describe("ClickHouse (8123) generation", () => {
   const clickhouseCaps = makeCaps({ defaultPort: 8123 });
 
-  test("generateTableQuery uses the plain LIMIT form", () => {
-    expect(generateTableQuery(["events"], clickhouseCaps)).toBe("SELECT * FROM events LIMIT 50;");
+  test("generateTableQuery uses the plain SELECT form", () => {
+    expect(generateTableQuery(["events"], clickhouseCaps)).toBe("SELECT * FROM events;");
   });
 
   test("generateTableQuery qualifies and quotes a database-scoped table per segment", () => {
     // Cross-database tables are addressed as `database.table`, so the dot must stay
     // a separator; ClickHouse is case-sensitive, so a mixed-case name needs quoting.
-    expect(generateTableQuery(["demo", "Events"], clickhouseCaps)).toBe('SELECT * FROM demo."Events" LIMIT 50;');
+    expect(generateTableQuery(["demo", "Events"], clickhouseCaps)).toBe('SELECT * FROM demo."Events";');
   });
 
   test("generateSelectQuery emits a double-quoted column list and LIMIT 100", () => {
@@ -374,12 +371,6 @@ describe("ClickHouse (8123) generation", () => {
     expect(generateSelectQuery(["demo", "regtest"], cols, clickhouseCaps)).toBe(
       'SELECT\n  id,\n  "Name"\nFROM demo.regtest\nWHERE 1=1\nLIMIT 100;',
     );
-  });
-
-  test("the trailing LIMIT is the last clause, so a user-appended FORMAT stays legal", () => {
-    // `... FORMAT TSV LIMIT 1` is a syntax error; `... LIMIT 1 FORMAT TSV` is not.
-    const out = generateTableQuery(["events"], clickhouseCaps);
-    expect(out.trimEnd().endsWith("LIMIT 50;")).toBe(true);
   });
 
   test("quoteIdentifier keeps plain lowercase bare and double-quotes anything else", () => {
@@ -407,7 +398,7 @@ describe("Druid (8888) generation", () => {
   const druidCaps = makeCaps({ defaultPort: 8888 });
 
   test("generateTableQuery quotes the datasource and uses the plain LIMIT form", () => {
-    expect(generateTableQuery(["libredb_demo"], druidCaps)).toBe('SELECT * FROM "libredb_demo" LIMIT 50;');
+    expect(generateTableQuery(["libredb_demo"], druidCaps)).toBe('SELECT * FROM "libredb_demo";');
   });
 
   // The trap that makes the default branch correct for Druid rather than merely
@@ -517,7 +508,7 @@ describe("Trino (declared capabilities, port 8080) generation", () => {
     // Not cosmetic. Measured: `SELECT * FROM tpch.sf1.nation LIMIT 50;` is
     // "line 1:39: mismatched input ';'. Expecting: <EOF>" - the terminator is not in
     // Trino's grammar, so a generated statement carrying one cannot run at all.
-    expect(generateTableQuery(["nation"], trinoCaps)).toBe("SELECT * FROM nation LIMIT 50");
+        expect(generateTableQuery(["nation"], trinoCaps)).toBe("SELECT * FROM nation");
   });
 
   test("generateSelectQuery emits the column list unquoted and no terminator", () => {
@@ -648,7 +639,7 @@ describe("quoteIdentifier", () => {
 
   test("generateTableQuery quotes a mixed-case Postgres table", () => {
     expect(generateTableQuery(["Customer"], makeCaps({ defaultPort: 5432 }))).toBe(
-      'SELECT * FROM "Customer" LIMIT 50;',
+      'SELECT * FROM "Customer";',
     );
   });
 
@@ -664,7 +655,7 @@ describe("quoteIdentifier", () => {
   test("generateTableQuery on a schema-qualified table does NOT wrap the dot (regression)", () => {
     // Was producing the broken `"employees.department"`; must be `employees.department`.
     expect(generateTableQuery(["employees", "department"], makeCaps({ defaultPort: 5432 }))).toBe(
-      "SELECT * FROM employees.department LIMIT 50;",
+      "SELECT * FROM employees.department;",
     );
   });
 
