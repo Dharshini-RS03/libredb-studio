@@ -2820,25 +2820,15 @@ describe("PostgresProvider", () => {
 
     test("applies offset for the next result page", () => {
       provider = new PostgresProvider(makePgConfig());
-      const result = provider.prepareQuery(
-        "SELECT * FROM users ORDER BY id",
-        { limit: 50, offset: 50 },
-      );
-      expect(result.query).toBe(
-        "SELECT * FROM users ORDER BY id LIMIT 50 OFFSET 50",
-      );
+      const result = provider.prepareQuery("SELECT * FROM users ORDER BY id", { limit: 50, offset: 50 });
+      expect(result.query).toBe("SELECT * FROM users ORDER BY id LIMIT 50 OFFSET 50");
       expect(result.wasLimited).toBe(true);
     });
 
     test("does not paginate past a user-specified limit", () => {
       provider = new PostgresProvider(makePgConfig());
-      const result = provider.prepareQuery(
-        "SELECT * FROM users ORDER BY id LIMIT 50",
-        { limit: 50, offset: 50 },
-      );
-      expect(result.query).toBe(
-        "SELECT * FROM users ORDER BY id LIMIT 50",
-      );
+      const result = provider.prepareQuery("SELECT * FROM users ORDER BY id LIMIT 50", { limit: 50, offset: 50 });
+      expect(result.query).toBe("SELECT * FROM users ORDER BY id LIMIT 50");
       expect(result.wasLimited).toBe(false);
     });
 

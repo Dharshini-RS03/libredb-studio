@@ -768,11 +768,7 @@ describe("useQueryAdapter", () => {
       await new Promise((r) => setTimeout(r, 10));
     });
 
-    expect(onQueryExecute).toHaveBeenCalledWith(
-      "conn-1",
-      "SELECT * FROM users",
-      { limit: 50, offset: 2 },
-    );
+    expect(onQueryExecute).toHaveBeenCalledWith("conn-1", "SELECT * FROM users", { limit: 50, offset: 2 });
     expect(tabs[0].result!.rows).toHaveLength(4);
     expect(tabs[0].result!.rowCount).toBe(4);
     expect(tabs[0].allRows).toHaveLength(4);

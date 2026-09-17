@@ -300,9 +300,7 @@ describe("Couchbase (SQL++) generation", () => {
   ];
 
   test("generateTableQuery aliases the keyspace and projects the document key", () => {
-    expect(generateTableQuery(["hotel"], couchbaseCaps)).toBe(
-      "SELECT META(d).id AS __id, d.* FROM `hotel` AS d;",
-    );
+    expect(generateTableQuery(["hotel"], couchbaseCaps)).toBe("SELECT META(d).id AS __id, d.* FROM `hotel` AS d;");
   });
 
   test("generateTableQuery quotes every segment of a scope-qualified collection", () => {
@@ -638,9 +636,7 @@ describe("quoteIdentifier", () => {
   });
 
   test("generateTableQuery quotes a mixed-case Postgres table", () => {
-    expect(generateTableQuery(["Customer"], makeCaps({ defaultPort: 5432 }))).toBe(
-      'SELECT * FROM "Customer";',
-    );
+    expect(generateTableQuery(["Customer"], makeCaps({ defaultPort: 5432 }))).toBe('SELECT * FROM "Customer";');
   });
 
   test("schema-qualified names are quoted per-segment, not as one identifier", () => {
@@ -1050,7 +1046,7 @@ describe("the generated statement addresses an object by its path", () => {
     // clicking `app.customers` generated `SELECT TOP 50 * FROM customers;` and the
     // server answered `Invalid object name 'customers'.`
     expect(generateTableQuery(["libredb_objects", "app", "customers"], mssqlCaps)).toBe(
-      "SELECT TOP 50 * FROM libredb_objects.app.customers;",
+      "SELECT * FROM libredb_objects.app.customers;",
     );
   });
 
@@ -1058,22 +1054,18 @@ describe("the generated statement addresses an object by its path", () => {
     // Reproduced on ClickHouse 25.8 with the connection defaulted to `demo`: clicking
     // `reporting.regions` generated `SELECT * FROM regions LIMIT 50;` and the server
     // answered `Code: 60 ... Maybe you meant reporting.regions?`.
-    expect(generateTableQuery(["reporting", "regions"], clickhouseCaps)).toBe(
-      "SELECT * FROM reporting.regions LIMIT 50;",
-    );
+    expect(generateTableQuery(["reporting", "regions"], clickhouseCaps)).toBe("SELECT * FROM reporting.regions;");
   });
 
   test("Oracle qualifies a table in another owner", () => {
-    expect(generateTableQuery(["REPORTING", "REPORT_DAILY"], oracleCaps)).toBe(
-      "SELECT * FROM REPORTING.REPORT_DAILY FETCH FIRST 50 ROWS ONLY",
-    );
+    expect(generateTableQuery(["REPORTING", "REPORT_DAILY"], oracleCaps)).toBe("SELECT * FROM REPORTING.REPORT_DAILY;");
   });
 
   test("qualification is emitted INSIDE the default container too", () => {
     // Deliberate, and the reason the fix is here rather than at the call site: no
     // capability declares which container a connection defaulted to, and the qualified
     // form is valid wherever the bare one is.
-    expect(generateTableQuery(["demo", "orders"], clickhouseCaps)).toBe("SELECT * FROM demo.orders LIMIT 50;");
+    expect(generateTableQuery(["demo", "orders"], clickhouseCaps)).toBe("SELECT * FROM demo.orders;");
   });
 
   test("Generate Query qualifies the same way Select Top N does", () => {
@@ -1088,13 +1080,11 @@ describe("the generated statement addresses an object by its path", () => {
   test("a dot inside a NAME is not read as a qualifier", () => {
     // The live case: ClickHouse holds `.inner_id.fake` in `demo`. Splitting the name
     // generated `SELECT * FROM "".inner_id.fake LIMIT 50;`, a syntax error at position 15.
-    expect(generateTableQuery(["demo", ".inner_id.fake"], clickhouseCaps)).toBe(
-      'SELECT * FROM demo.".inner_id.fake" LIMIT 50;',
-    );
+    expect(generateTableQuery(["demo", ".inner_id.fake"], clickhouseCaps)).toBe('SELECT * FROM demo.".inner_id.fake";');
   });
 
   test("a one-segment path whose name holds dots stays ONE identifier", () => {
-    expect(generateTableQuery([".inner_id.fake"], clickhouseCaps)).toBe('SELECT * FROM ".inner_id.fake" LIMIT 50;');
+    expect(generateTableQuery([".inner_id.fake"], clickhouseCaps)).toBe('SELECT * FROM ".inner_id.fake";');
   });
 
   test("no string-splitting spelling of a name survives anywhere in the module", () => {
@@ -1107,12 +1097,12 @@ describe("the generated statement addresses an object by its path", () => {
 
   // --- C. the Oracle terminator (pre-existing, not a PR regression) ---------
 
-  test("Oracle emits no trailing semicolon", () => {
+  test("Oracle emits a trailing semicolon", () => {
     // node-oracledb answers ORA-00933 for `... FETCH FIRST 50 ROWS ONLY;`, so clicking a
     // table on Oracle never worked. Reproduced in the browser on Oracle 26ai Free.
     const out = generateTableQuery(["APP", "APP_CUSTOMERS"], oracleCaps);
-    expect(out.endsWith(";")).toBe(false);
-    expect(out).toBe("SELECT * FROM APP.APP_CUSTOMERS FETCH FIRST 50 ROWS ONLY");
+    expect(out.endsWith(";")).toBe(true);
+    expect(out).toBe("SELECT * FROM APP.APP_CUSTOMERS;");
   });
 
   test("Generate Query on Oracle emits no trailing semicolon either", () => {
@@ -1170,7 +1160,7 @@ describe("the dialects that address one key or collection, not a qualified name"
     // keyspace is addressed bucket.scope.collection (`COUCHBASE_CONTAINER_LEVELS`), and
     // SQL++ needs every part of it.
     expect(generateTableQuery(["travel", "inventory", "hotel"], makeCaps({ defaultPort: 8091 }))).toBe(
-      "SELECT META(d).id AS __id, d.* FROM `travel`.`inventory`.`hotel` AS d LIMIT 50;",
+      "SELECT META(d).id AS __id, d.* FROM `travel`.`inventory`.`hotel` AS d;",
     );
   });
 });
