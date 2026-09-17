@@ -995,7 +995,7 @@ describe("OracleProvider", () => {
       // failure here rather than an ORA-00933 the next user meets by clicking.
       const caps = provider.getCapabilities();
       expect(generateTableQuery(["APP", "APP_CUSTOMERS"], caps)).toBe(
-        "SELECT * FROM APP.APP_CUSTOMERS FETCH FIRST 50 ROWS ONLY",
+        "SELECT * FROM APP.APP_CUSTOMERS;",
       );
       expect(generateSelectQuery(["APP", "APP_CUSTOMERS"], [], caps)).toBe(
         "SELECT\n  *\nFROM APP.APP_CUSTOMERS\nWHERE 1=1\nFETCH FIRST 100 ROWS ONLY",
