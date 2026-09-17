@@ -72,7 +72,7 @@ describe("generateTableQuery", () => {
   // runs on both, so one answer serves both products.
   test("a dialect that declares no terminator gets no trailing semicolon", () => {
     const caps = makeCaps({ defaultPort: 9200, statementTerminator: "none" });
-        expect(generateTableQuery(["orders"], caps)).toBe("SELECT * FROM orders");
+    expect(generateTableQuery(["orders"], caps)).toBe("SELECT * FROM orders");
   });
 
   test('LibreDB dialect: a ":*" prefix group scans with prefix', () => {
@@ -506,7 +506,7 @@ describe("Trino (declared capabilities, port 8080) generation", () => {
     // Not cosmetic. Measured: `SELECT * FROM tpch.sf1.nation LIMIT 50;` is
     // "line 1:39: mismatched input ';'. Expecting: <EOF>" - the terminator is not in
     // Trino's grammar, so a generated statement carrying one cannot run at all.
-        expect(generateTableQuery(["nation"], trinoCaps)).toBe("SELECT * FROM nation");
+    expect(generateTableQuery(["nation"], trinoCaps)).toBe("SELECT * FROM nation");
   });
 
   test("generateSelectQuery emits the column list unquoted and no terminator", () => {
