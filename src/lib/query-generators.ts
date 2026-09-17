@@ -424,7 +424,7 @@ export function generateTableQuery(
   if (capabilities.defaultPort === COUCHBASE_PORT) {
     return `SELECT ${COUCHBASE_KEY_PROJECTION}, ${COUCHBASE_ALIAS}.* FROM ${table} AS ${COUCHBASE_ALIAS};`;
   }
-    // Oracle
+  // Oracle
   if (capabilities.defaultPort === 1521) {
     return `SELECT * FROM ${table};`;
   }

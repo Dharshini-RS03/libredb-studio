@@ -41,7 +41,7 @@ const sampleColumns: ColumnSchema[] = [
 // ============================================================================
 
 describe("generateTableQuery", () => {
-    test("SQL (postgres/mysql/sqlite) generates an unbounded table query", () => {
+  test("SQL (postgres/mysql/sqlite) generates an unbounded table query", () => {
     const result = generateTableQuery(["users"], makeCaps({ defaultPort: 5432 }));
     expect(result).toBe("SELECT * FROM users;");
   });
