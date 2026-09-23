@@ -9,10 +9,11 @@ what a partner-charts submission copies; the refresh submitted on 2026-09-09 is 
 (see the delivery note at the end).
 `E2E_VALIDATION_TASK.md` covers the validation side.
 
-The listing is live at https://www.suse.com/pcsc/viewVersionPage?versionID=26969 (SUSE
-published it on 2026-08-05 from an earlier revision of this file). Edits here do not
-propagate automatically — SUSE owns the page, so any change has to be mailed to the
-partner contact.
+The listing went live on 2026-08-05 from an earlier revision of this file.
+SUSE imports new chart versions from rancher/partner-charts about once a week, and each import creates a new version page with a new `versionID`, so link the partner search rather than one page: https://www.suse.com/pcsc/home#search?productName=&sortOrder.sortOrder=1&partnerName=Sekoya&platforms=1027
+The import takes the page title from `appVersion` and the chart version from `version`; the description is pasted by hand.
+Edits here do not propagate automatically — SUSE owns the page, so any change has to be mailed to the partner contact.
+What gets mailed is `pcsc-listing.html` beside this file, not the sections below: the page template holds at most 1494 characters including the list markup, and `tests/unit/pcsc-listing.test.ts` keeps that file under it.
 
 > **Accuracy gate — engine count.** The wording below says sixteen engines. That is true only
 > from the release that carries **DuckDB** ([#424](https://github.com/libredb/libredb-studio/issues/424)),
@@ -54,8 +55,13 @@ partner contact.
 > than a count, and check it by grepping `explainFormat:` under `src/lib/db/providers/` rather
 > than by trusting this line. Alongside it is the read-only agent rail
 > ([`docs/AGENT.md`](https://github.com/libredb/libredb-studio/blob/main/docs/AGENT.md)),
-> which executes statements on PostgreSQL and SQLite only (`queryReadOnly` exists on those
-> two providers alone) in a session the database enforces as read-only. "Executes nothing it
+> which executes statements on PostgreSQL, SQLite, DuckDB and SQL Server only (`queryReadOnly`
+> exists on those four providers alone), with the database and not the IDE refusing the write. Do
+> NOT write "in a read-only session": that is true of three of the four and false of SQL Server,
+> which has no read-only transaction and no session-level read-only switch, and bounds the run by
+> a principal verified at open to be unable to write plus an optimizer admission per statement
+> (`docs/providers/mssql.md`). "Never writes" is engine-independent and is the sentence to use.
+> "Executes nothing it
 > recommends" is an overclaim this product already rejected: the consented editor hand-over
 > runs exactly the recommended statement
 > (`src/app/api/agent/runs/[runId]/handover/route.ts` calls `queryReadOnly(answer.sql, …)`).
@@ -103,7 +109,7 @@ partner contact.
 | License | MIT (open source) |
 | Specialization | SUSE One — INNOVATE |
 | Certification | SUSE Ready, Platform: SUSE Rancher — granted, live since 2026-08-05 |
-| Catalog listing | https://www.suse.com/pcsc/viewVersionPage?versionID=26969 |
+| Catalog listing | https://www.suse.com/pcsc/viewVersionPage?versionID=27107 (0.16.2 / chart 0.1.67, imported 2026-09-23; the ID changes with every import) |
 | Website | https://libredb.org |
 | Source | https://github.com/libredb/libredb-studio |
 | Helm repository | https://libredb.org/libredb-studio/ (also OCI: `oci://ghcr.io/libredb/charts/libredb-studio`) |
@@ -131,10 +137,10 @@ failed — Elasticsearch SQL has no mutation in its grammar at all, OpenSearch's
 mutation (`DELETE`) is off by default, and Druid SQL has no `UPDATE`, no `DELETE` and no
 `CREATE TABLE`. An optional AI assistant (bring your own key: Gemini, OpenAI, or a local
 model) writes up a query in plain English from the engine's own EXPLAIN plan, on
-PostgreSQL, MySQL, SQLite, libSQL, DuckDB, Couchbase, ClickHouse, Apache Druid and Apache Trino —
-the engines that return one — and runs a read-only investigation agent on PostgreSQL,
-SQLite and DuckDB whose every claim cites the result it came from, and that never writes: the session
-is read-only and the database, not the IDE, refuses writes and DDL. It stays off unless
+PostgreSQL, MySQL, SQLite, libSQL, DuckDB, Couchbase, ClickHouse, Apache Druid and Apache Trino,
+the engines that return one. It also runs a read-only investigation agent on PostgreSQL,
+SQLite, DuckDB and SQL Server whose every claim cites the result it came from, and that never writes:
+the database, not the IDE, is what refuses writes and DDL. It stays off unless
 configured.
 
 The Helm chart installs from the Rancher Apps catalog with default values: first-run
@@ -154,9 +160,9 @@ versions are documented and validated for every release.
   zero configuration required
 - Optional AI assistance (Gemini, OpenAI, or a self-hosted model; off by default):
   plain-English query explanation on the engines that return an EXPLAIN plan (PostgreSQL,
-  MySQL, SQLite, libSQL, DuckDB, Couchbase, ClickHouse, Apache Druid, Apache Trino), and a
-  read-only investigation agent on PostgreSQL, SQLite and DuckDB that never writes — the database enforces
-  the read-only session, not the IDE
+  MySQL, SQLite, libSQL, DuckDB, Couchbase, ClickHouse, Apache Druid, Apache Trino). Plus a
+  read-only investigation agent on PostgreSQL, SQLite, DuckDB and SQL Server that never writes — the
+  database, not the IDE, is what refuses the write
 - Hardened chart defaults: non-root, read-only root filesystem, NetworkPolicy, PDB,
   HPA, Ingress/TLS
 - Self-hosted and air-gap friendly: no external services required to operate the IDE
@@ -222,6 +228,12 @@ carried our releases since the 0.1.36 listing without a pull request, taking the
 chart version at each run rather than every version in between.
 An overlay edit reaches the catalog with the next version that CI integrates, because the
 overlay is copied in only when a new chart version is built.
+
+**2026-09-23.** SUSE imported every release since 0.9.44 up to 0.16.2 / chart 0.1.67, so the Version row in the corrections table is resolved by the weekly import and needs no mail.
+The description is still the pre-0.11.0 text: the long description above did not fit the page template, which holds at most 1494 characters including the markup for the bullet list.
+`pcsc-listing.html` is the body cut to fit, and it is what goes to SUSE from now on.
+It answers to the same accuracy gates as this file, plus the size gate in `tests/unit/pcsc-listing.test.ts`, which counts line breaks as CRLF because we do not know how the form counts them.
+The open question to SUSE is whether their import can read the listing from a chart field; if it can, the paste step goes away.
 
 Vendor naming, as settled: the page heads the partner as **Sekoya** (the legal entity,
 Sekoya Grup Bilisim ve Teknoloji Ltd. Sti.) with the product named **LibreDB Studio**.

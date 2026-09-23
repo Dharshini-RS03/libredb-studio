@@ -1,10 +1,11 @@
 /**
  * The accuracy gate for outward-facing marketplace copy.
  *
- * These six files are copy submitted to somebody else's catalog: Railway,
- * DigitalOcean, SUSE PCSC, Azure Partner Center, the AWS Marketplace Management Portal,
- * and the app-readme overlay Rancher renders. Nobody in this repo reviews them again once
- * they are submitted - the first five by mail, the last by a pull request against
+ * These seven files are copy submitted to somebody else's catalog: Railway,
+ * DigitalOcean, SUSE PCSC (the canonical wording and the size-limited page body cut from
+ * it), Azure Partner Center, the AWS Marketplace Management Portal, and the app-readme
+ * overlay Rancher renders. Nobody in this repo reviews them again once they are
+ * submitted - the first six by mail, the last by a pull request against
  * `rancher/partner-charts`, where no test here can reach the copy that ships - so the only
  * thing standing between a corrected claim and its return is a test.
  *
@@ -24,7 +25,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import { readFileSync, readdirSync, statSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { basename, dirname, join, relative, sep } from "node:path";
 import { DB_UI_CONFIG, getDBConfig } from "@/lib/db-ui-config";
 import { EXTERNAL_DATABASE_TYPES } from "@/lib/db/compatibility";
 import type { DatabaseType } from "@/lib/types";
@@ -39,6 +40,7 @@ const LISTINGS = {
   azure: "deploy/azure/listing/listing-fields.md",
   aws: "deploy/aws/listing/listing-fields.md",
   rancherAppReadme: "deploy/rancher/app-readme.md",
+  rancherPcsc: "deploy/rancher/pcsc-listing.html",
 } as const;
 
 /**
@@ -50,6 +52,10 @@ const LISTINGS = {
  */
 function submittedCopy(path: string): string {
   const content = readFileSync(join(REPO_ROOT, path), "utf8");
+  // The PCSC page body is HTML, and every sentence splitter below reads line and bullet
+  // boundaries. A list item is a boundary on the rendered page, so it is one here too;
+  // without it a bullet ending in an engine name runs into the next bullet's claim.
+  if (path === LISTINGS.rancherPcsc) return content.replace(/<\/?(?:ul|li)>/g, "\n\n");
   if (path !== LISTINGS.rancher) return content;
   const from = content.indexOf("## Short description");
   const to = content.indexOf("## Outstanding corrections");
@@ -146,6 +152,18 @@ describe("the explanation claim names only engines that return a plan", () => {
           expect(claim).not.toContain(getDBConfig(type).label);
         }
       }
+    });
+  }
+});
+
+describe("no listing says the agent runs in a read-only session", () => {
+  for (const [name, path] of Object.entries(LISTINGS)) {
+    test(`${name} does not put SQL Server in a read-only session`, () => {
+      // True of PostgreSQL, SQLite and DuckDB, false of SQL Server, which has no read-only
+      // transaction and no session-level read-only switch (docs/providers/mssql.md). The
+      // gate in CATALOG_LISTING.md bans the phrase by name; "never writes" is the
+      // engine-independent sentence to use.
+      expect(submittedCopy(path)).not.toMatch(/read-only session/i);
     });
   }
 });
@@ -342,4 +360,106 @@ describe("the Rancher file's own accuracy gate audits against the corrected clai
     expect(gate).toContain("no `UPDATE`, no `DELETE` and no `CREATE TABLE`");
     expect(gate).toContain("MSQ task engine");
   });
+});
+
+/**
+ * The buyer-facing copy of every channel whose provisioning writes `AUTH_COOKIE_SECURE=false`
+ * unconditionally, keyed to the script that writes it.
+ *
+ * Both entries ship the same shape: a bare VM with no name of its own, reached over plain
+ * HTTP at `:3000`, where the browser would otherwise discard the Secure cookie and login
+ * would loop while every health probe passed. The override is the only thing that makes
+ * login work there, and its cost is that the session cookie travels in cleartext - which is
+ * a fact about the product the buyer is entitled to read BEFORE deploying, not after.
+ *
+ * `usage-instructions.md` and not `listing-fields.md` for AWS: the disclosure lives in the
+ * usage instructions, and that file was in no gate at all, so it could have been deleted
+ * without a single test turning red.
+ */
+const PLAIN_HTTP_CHANNELS = {
+  digitalocean: {
+    provisioner: "deploy/digitalocean/droplet/files/var/lib/cloud/scripts/per-instance/99-libredb-first-boot.sh",
+    copy: LISTINGS.digitalocean,
+  },
+  aws: {
+    provisioner: "deploy/aws/ami/files/usr/local/sbin/libredb-firstboot",
+    copy: "deploy/aws/listing/usage-instructions.md",
+  },
+} as const;
+
+/**
+ * A provisioning script that writes the override UNCONDITIONALLY, which is what obliges the
+ * channel to disclose it.
+ *
+ * Anchored to the start of a line, with the `printf` form AWS uses admitted. That anchor is
+ * the whole discriminator: Azure writes the same assignment guarded by
+ * `if [ "$SITE_ADDRESS" = ":80" ]`, so its line starts with `if` and it is correctly left
+ * out - its plain-HTTP mode is opt-in and its README documents it where the operator picks
+ * the mode. A reformat that moved Azure's assignment to its own line would pull it INTO the
+ * set and fail this gate, which is the safe direction: the fix is then to disclose it or to
+ * record the exemption here, and neither is silent.
+ */
+const WRITES_OVERRIDE_UNCONDITIONALLY = /^[ \t]*(?:printf ')?AUTH_COOKIE_SECURE=false/m;
+
+/** Every shell script under `deploy/`, at any depth, extensionless ones included. */
+function deployScripts(dir: string): string[] {
+  return readdirSync(dir).flatMap((entry) => {
+    const full = join(dir, entry);
+    if (statSync(full).isDirectory()) return deployScripts(full);
+    return /\.(sh|bash)$/.test(entry) || !entry.includes(".") ? [full] : [];
+  });
+}
+
+/**
+ * A repo-relative path with POSIX separators, so the discovered set reads the same on
+ * Windows, where `join` produces `\` and the mapped paths below would never match.
+ */
+const repoRelative = (full: string): string => relative(REPO_ROOT, full).split(sep).join("/");
+
+/** The provisioners that write the override, as repo-relative paths. */
+const plainHttpProvisioners: string[] = deployScripts(join(REPO_ROOT, "deploy"))
+  .filter((file) => WRITES_OVERRIDE_UNCONDITIONALLY.test(readFileSync(file, "utf8")))
+  .map(repoRelative)
+  .sort();
+
+describe("every plain-HTTP channel discloses the cleartext cookie in its listing", () => {
+  test("the discovered provisioner set is real and matches the mapped channels", () => {
+    // Without this the two assertions below could both pass on an empty discovery: a regex
+    // that matched nothing would make the completeness check vacuous, and a map read
+    // straight from the same regex would agree with itself.
+    expect(plainHttpProvisioners.length).toBeGreaterThan(0);
+    expect(plainHttpProvisioners).toEqual(
+      Object.values(PLAIN_HTTP_CHANNELS)
+        .map((c) => c.provisioner)
+        .sort(),
+    );
+  });
+
+  test("the regex reads Azure's guarded write as conditional, not unconditional", () => {
+    // The distinction the whole gate rests on, pinned against both real forms rather than
+    // against a sentence about them.
+    expect(
+      WRITES_OVERRIDE_UNCONDITIONALLY.test(
+        `if [ "$SITE_ADDRESS" = ":80" ]; then printf 'AUTH_COOKIE_SECURE=false\\n'; fi`,
+      ),
+    ).toBe(false);
+    expect(WRITES_OVERRIDE_UNCONDITIONALLY.test("    printf 'AUTH_COOKIE_SECURE=false\\n'")).toBe(true);
+    expect(WRITES_OVERRIDE_UNCONDITIONALLY.test("AUTH_COOKIE_SECURE=false")).toBe(true);
+  });
+
+  for (const [name, channel] of Object.entries(PLAIN_HTTP_CHANNELS)) {
+    test(`${name} still writes the override, so the disclosure is still owed`, () => {
+      // Binds the two halves. A channel that gains TLS and drops the override should fail
+      // here and have its disclosure revisited, rather than keep a warning that is no
+      // longer true.
+      expect(readFileSync(join(REPO_ROOT, channel.provisioner), "utf8")).toMatch(WRITES_OVERRIDE_UNCONDITIONALLY);
+    });
+
+    test(`${name} discloses it in the copy the buyer reads`, () => {
+      const copy = submittedCopy(channel.copy);
+      expect(copy).toContain("AUTH_COOKIE_SECURE");
+      // Naming the variable is not the disclosure: the buyer has to be told what it costs.
+      expect(copy).toMatch(/cleartext|unencrypted|not encrypted/i);
+    });
+  }
 });

@@ -111,9 +111,10 @@ const HANDOVER_STATEMENT_TIMEOUT_MS = 2_147_483_647;
  * - **Rows: the editor's own default**, imported rather than restated, because the
  *   number the checkbox names and the number the server enforces have to be one
  *   value. It refuses rather than truncates, like every other read on this path
- *   (§2.5 of `docs/AGENT_ANALYST_DESIGN.md` argues at length against injecting a
- *   `LIMIT`, and a server-side truncation would be the same lie with a different
- *   author). Condition 1 of the gate has already established that this statement
+ *   (the "Handing the answer to the editor (auto-execute)" section of `docs/AGENT.md`
+ *   argues at length against injecting a `LIMIT`, and a server-side truncation would
+ *   be the same lie with a different author). Condition 1 of the gate has already
+ *   established that this statement
  *   returned 200 rows or fewer on the agent's own path, so the headroom to 500 is
  *   real rather than nominal.
  * - **Time: no limit, spelled as the ceiling above.**
@@ -135,9 +136,9 @@ export const AGENT_HANDOVER_BUDGET: ReadOnlyStatementBudget = Object.freeze({
  * The three fields are enforced in three different places — the policy by the
  * operation pipeline, `runDeadlineMs` by `AgentRunDeadline`, `maxModelTurns` by the
  * run loop — and they are held together here because they only make sense together:
- * §1.3 of `docs/AGENT_ANALYST_DESIGN.md` shows that a turn ceiling raised without the
- * wall clock that makes it reachable is decoration, and a wall clock raised without
- * the turns is room nothing can use.
+ * the "What bounds a run" section of `docs/AGENT.md` shows that a turn ceiling raised
+ * without the wall clock that makes it reachable is decoration, and a wall clock
+ * raised without the turns is room nothing can use.
  */
 export interface AgentWorkflowBudget {
   /** The policy every tool call of a run of this workflow is evaluated against. */
@@ -307,13 +308,16 @@ function workflowBudget(input: {
  *   in front of a container needs its own timeout raised — stated in `docs/AGENT.md`
  *   under "Deployment" rather than silently assumed.
  *
- * Every one of these ceilings is per DRIVE, not per run. The budget tracker, the repair
- * ledger and the deadline all live in the process that drives a run, so a run resumed
- * after a process death starts each of them again: N resumes cost up to N times a single
- * drive's ceiling. Nothing here is a lie about a run's total cost because nothing here
- * claims to bound one — bounding a run ACROSS resumes needs a ceiling folded from its own
- * ledger (the record carries `createdAtMs`, so the data exists), and that is recorded in
- * `docs/BACKLOG.md` rather than implied here.
+ * Which of these bound a RUN and which bound one DRIVE, since #999 folded the run's own
+ * ledger into the ceilings a drive starts with (`drive-budget.ts`):
+ *
+ *   - `maxStatementsPerRun` and the database-time figure bound the run. A resumed drive is
+ *     seeded with what earlier drives spent, so N resumes no longer cost N times the
+ *     ceiling.
+ *   - `runDeadlineMs` bounds the run too, and on the WALL clock: it is derived from
+ *     `createdAtMs`, so time a run spends paused or between drives is spent against it.
+ *   - `maxModelTurns` and the repair ledger are still per drive. A resumed run counts its
+ *     own turns, and its repair attempts start again (`docs/BACKLOG.md` B6).
  */
 export const AGENT_WORKFLOW_BUDGETS: Readonly<Record<AgentRunWorkflowType, AgentWorkflowBudget>> = Object.freeze({
   investigation: workflowBudget({
@@ -511,3 +515,36 @@ export const AGENT_THREAD_STEP_OBJECTIVE_MAX_CHARS = 200;
  * that half-read a conversation must not be confident about the half it has.
  */
 export const AGENT_THREAD_MAX_STEPS = 20;
+
+/**
+ * How many finished conversations the run history retains, per user.
+ *
+ * The history index is append-only — one entry per finished run — so this is a READ
+ * bound, not a write bound: `foldHistoryEntries` keeps the newest conversations up
+ * to this count and drops older ones from the listing. Nothing is deleted from the
+ * index stream, because deleting from an append-only ledger would be a second kind
+ * of write and the cost of the cap is a listing, not a retention promise.
+ *
+ * The number is a user-facing bound and is stated in `docs/AGENT_GUIDE.md`; changing
+ * it there without changing it here fails the drift guard that pins the two.
+ */
+export const AGENT_HISTORY_MAX_CONVERSATIONS = 50;
+
+/**
+ * How many conversations one history page serves when the caller says nothing.
+ *
+ * A page, not the whole history: the route clamps a caller's `limit` to
+ * `AGENT_HISTORY_PAGE_MAX` and defaults an absent one here, so a caller cannot
+ * make a single request read more than the bounded index is sized for.
+ */
+export const AGENT_HISTORY_PAGE_DEFAULT = 20;
+
+/**
+ * The largest `limit` the history route will honour.
+ *
+ * Everything above it is clamped rather than refused: a caller asking for 10 000
+ * conversations gets the bounded page, and a clamped answer is the honest one —
+ * the alternative, refusing, would teach a client a number it does not need to
+ * know and turn a large page into an error the UI has to special-case.
+ */
+export const AGENT_HISTORY_PAGE_MAX = 100;

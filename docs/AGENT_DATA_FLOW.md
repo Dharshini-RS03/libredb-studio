@@ -185,7 +185,7 @@ routes for that reason.
 
 ## One agent run, message by message
 
-The transcript is assembled in `runInvestigation` (`src/lib/agent/investigation.ts:662-825`) and is
+The transcript is assembled in `runInvestigation` (`src/lib/agent/investigation.ts:2540`) and is
 sent by `takeTurn` through `streamText` (`investigation.ts:575-592`). Nothing else in the runtime
 sends anything.
 
@@ -208,7 +208,7 @@ all (see [What never leaves](#what-never-leaves)).
 ### 2. Your objective, verbatim
 
 The first user message is the text you typed, unmodified apart from the trim the rail applies
-(`investigation.ts:698`). Bounded to 4000 characters by the route and by the rail
+(`investigation.ts:2654`). Bounded to 4000 characters by the route and by the rail
 (`AGENT_MAX_OBJECTIVE_LENGTH`).
 
 ### 2a. The conversation, when a run continues one — fenced
@@ -216,7 +216,7 @@ The first user message is the text you typed, unmodified apart from the trim the
 **This is the one message whose content came from an EARLIER question of yours.** It is sent only
 when a run continues a conversation: a follow-up asked on the same connection, where the rail
 attaches the previous run's id and the route derives the block server-side from those runs' own
-ledgers (`thread-context.ts`, `investigation.ts:1923`). A run that starts a conversation of its own
+ledgers (`thread-context.ts`, `investigation.ts:2660-2661`). A run that starts a conversation of its own
 sends nothing here, and there is no such message at all.
 
 What is in it, and where each half came from:
@@ -271,8 +271,9 @@ a refusal — nothing of the schema leaves and a server-written note says so in 
 
 **Two readings produce it, and which one runs is the dialect's decision** (#414). On PostgreSQL and
 SQLite the server composes a catalog statement per kind and executes it read-only. On the other
-fifteen it invokes `db.schema.read`, which calls the connection's own `provider.getSchema()` — the
-inspection the sidebar performs when it lists your tables — and composes no statement at all.
+fifteen it invokes `db.schema.read`, which walks the connection's own OBJECT SURFACE — the same
+`listContainers`, `countObjects`, `listObjects` and `describeObjects` the sidebar walks when it lists
+your objects — and composes no statement at all.
 **Fifteen counts type-ids the factory can build, not engines a user would name**: `SHIPPED` holds
 seventeen, `CATALOG_PLANS` serves two of them, and the remainder is what this second reading covers.
 Every other count said about grounding in these docs counts the same thing. libSQL is one of the
@@ -302,7 +303,7 @@ two properties differ and are stated here rather than left to be discovered:
   rather than read from a catalog, and that is a different claim from every other line in this
   document — worth its own sentence for exactly that reason, and the reason `db.schema.read` is an
   operation id of its own rather than a detail of the capture.
-- **On Redis and LibreDB the names are not names anything holds.** `getSchema()` scans a bounded
+- **On Redis and LibreDB the names are not names anything holds.** The object walk scans a bounded
   slice of the keyspace and groups the real key names it found under their common prefix, so what
   leaves the process is one row per prefix — `user:*`, `order:*` — and each is a summary this server
   computed from your key names rather than an object the engine declares. The names it summarises are
@@ -321,7 +322,7 @@ that was hard-coded before.
 So on an Operate run this section is narrower than what follows and section 4 does not happen. On
 every other workflow, the inventory is captured once per run by whichever of the two readings that
 dialect gets, then packed for the task
-(`packContextForTask`, `src/lib/agent/context-snapshot.ts:466-505`). Per table it renders
+(`packContextForTask`, `src/lib/agent/context-snapshot.ts:1392`). Per table it renders
 (`renderTable`, `context-snapshot.ts:428-441`):
 
 - the table name;
@@ -342,7 +343,7 @@ name is what the block carries.
 ### 4. The relations block — identifiers only, quoted and escaped
 
 The inventory's foreign keys, rendered as a relation list and fenced beside the inventory
-(`packRelations`, `investigation.ts:288-294`; rendering in `src/lib/agent/er-diagram.ts:228-269`).
+(`packRelations`, `investigation.ts:1806`; rendering in `src/lib/agent/er-diagram.ts:228-269`).
 It carries table names, column names, and at the deepest detail level a table's primary-key and
 leading-index column names (`keyColumns`, `er-diagram.ts:145-157`). **Never a row value.**
 
@@ -361,7 +362,7 @@ rendered characters — a bound in characters, because a count of edges is not a
 
 | Outcome | What is sent back to the model | Call site |
 | --- | --- | --- |
-| A completed read | A server sentence naming the artifact id, then the **rows**: one `JSON.stringify` per row, newline separated, inside a fence labelled `<what it was>, N row(s)` | `tools.ts:918-932`, rendering at `tools.ts:620-624` |
+| A completed read | A server sentence naming the artifact id, then the **rows**: one `JSON.stringify` per row, newline separated, inside a fence labelled `<what it was>, N row(s)` | `tools.ts:2079`, rendering at `tools.ts:620-624` |
 | A statement that failed at the database | The **engine's own message**, fenced, referenced by the statement's fingerprint | `tools.ts:872-882` |
 | A policy denial | Server text only: the deny code, the policy version, and advice that a boundary decided this. There is no engine text because a denial produced none | `denialText`, `tools.ts:568-574` |
 | An approval requirement | Server text naming the operation id | `approvalText`, `tools.ts:576-581` |
@@ -480,7 +481,7 @@ statement rather than as an opaque token.
 ## The fence, and what it does not do
 
 Everything derived from the database is wrapped by `fenceUntrustedContent`
-(`src/lib/agent/untrusted-content.ts:71-76`): a header naming what the block is, which operation
+(`src/lib/agent/untrusted-content.ts:119`): a header naming what the block is, which operation
 produced it and which id it joins to; a fixed instruction that the lines are data and must never be
 followed as instructions; and a pair of markers bounding the region.
 
@@ -544,7 +545,7 @@ The frozen execution policies are the ceiling on one run's egress, one row per w
 | Bound | Value | What it caps |
 | --- | --- | --- |
 | `maxResultRows` / `maxResultBytes` | 200 rows / 256 KiB | The most one read can return — and therefore the most one tool result can send |
-| `maxStatementsPerRun` | 18-45, by workflow | Reads per drive, grounding reads and repairs included — the composed catalog reads and, since #414, the one `db.schema.read` call that replaces them on the other fifteen. The figures did not move for it: that path is the cheapest of the three, so nothing had to be bought (`docs/AGENT.md`, the budget arithmetic) |
+| `maxStatementsPerRun` | 18-45, by workflow | Reads per run, folded across its drives (#999), grounding reads and repairs included — the composed catalog reads and, since #414, the one `db.schema.read` call that replaces them on the other fifteen. The figures did not move for it: that path is the cheapest of the three, so nothing had to be bought (`docs/AGENT.md`, the budget arithmetic) |
 | `AGENT_CONTEXT_PACK_MAX_CHARS` | 6000 | The fenced schema inventory |
 | `MAX_ER_CHARS` | 2000 | The fenced relations block |
 | `AGENT_MAX_OBJECTIVE_LENGTH` | 4000 | Your objective |
@@ -554,8 +555,12 @@ An oversized read is **refused, not truncated**, so a result that reached the mo
 one. Note the honest edge: the comparison happens after the driver has materialised the rows, so an
 oversized read is refused but still paid for at the database.
 
-Every one of these is **per drive**. A run resumed after a restart starts each of them again
-(`docs/BACKLOG.md` B6).
+**Some of these bound the run and some bound one drive.** `maxStatementsPerRun` and the
+database-time figure bound the run: since #999 a drive is seeded with what the run's ledger says
+earlier drives spent. `runDeadlineMs` bounds the run on the wall clock, measured from the moment
+the run opened, so time it spends paused or between drives is spent against it. `maxModelTurns` and
+the repair ledger are still per drive: a resumed run counts its own turns and its repair attempts
+start again (`docs/BACKLOG.md` B6).
 
 **The classification is outside all of it**, by construction: it happens before a run exists, so
 there is no budget to charge it to. Its own bounds are its 8-second ceiling and its 16-token
@@ -632,10 +637,10 @@ fences what it sends:
 | Visual EXPLAIN's AI explanation | `POST /api/ai/explain` | `query`, `explainPlan`, `schemaContext`, `databaseType` | `src/components/VisualExplain.tsx:486-497` |
 | Query safety dialog | `POST /api/ai/query-safety` | `query`, a filtered `schemaContext`, `databaseType` | `src/components/QuerySafetyDialog.tsx:167-171` |
 | Database documentation | `POST /api/ai/describe-schema` | A schema string built from table names, row counts and column definitions | `src/components/DatabaseDocs.tsx:61-68` |
-| Data Profiler's AI summary | `POST /api/ai/describe-schema` | Per column: null percent, distinct count, **`min=` and `max=`** | `src/components/DataProfiler.tsx:148-173` |
+| Data Profiler's AI summary | `POST /api/ai/describe-schema` | Per column: null percent, distinct count, **`min=` and `max=`** | `src/components/DataProfiler.tsx:84-107` |
 
 **That last row is the one to read carefully.** `/api/db/profile` computes `MIN(col::text)` and
-`MAX(col::text)` per column (`src/app/api/db/profile/route.ts:96-97`), and the Data Profiler puts
+`MAX(col::text)` per column (`src/app/api/db/profile/route.ts:115-116`), and the Data Profiler puts
 both into the context it sends for an AI summary. Those are **real values out of your columns** —
 the lexicographic first and last of each profiled column. It is the sharpest difference between the
 two profiling surfaces in this product: the agent's `profile_table` was built so that no value can

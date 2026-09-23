@@ -1,5 +1,5 @@
 import { describe, expect, test, mock, spyOn, beforeEach } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { discoverRoutes } from "./helpers/discover-routes";
 
@@ -201,6 +201,21 @@ const API_ROOT_DIR = join(SRC_ROOT_DIR, "app", "api");
 const ALL_ROUTES = discoverRoutes(API_ROOT_DIR);
 
 /**
+ * Route handlers that sit OUTSIDE `src/app/api/`, which the walk above cannot see.
+ *
+ * `/health` is one deliberately: it is the plainest path a platform's health field defaults
+ * to, and it has to be at the app root to be that (#909). The walk is left where it is
+ * rather than widened, because widening it would re-key every entry in the allowlist below
+ * — so the scope is made explicit here instead, and this list fails the moment a second
+ * handler appears outside `api/` without anyone deciding to put it there.
+ *
+ * `/health` itself is held by `tests/api/health-routes.test.ts` (it answers 200 with a fixed
+ * body and no session) and by `tests/api/proxy.test.ts` (it is on the public list, so it can
+ * never answer with a redirect to the login screen).
+ */
+const ROUTES_OUTSIDE_API = ["health"];
+
+/**
  * Every route that legitimately reaches no database or LLM provider, so the enumeration below
  * does not require it to call guardRoute. Every entry needs a reason: an unexplained addition
  * here is exactly the hand-maintained-inventory drift this enumeration exists to prevent, and
@@ -221,7 +236,7 @@ const ROUTES_WITHOUT_A_PROVIDER: Record<string, string> = {
   "agent/drive":
     "reaches a provider, but is the durable transport's callback and can have no user session: it verifies a server-minted single-purpose credential and its 401 body differs from guardRoute's on purpose (tests/api/agent/drive.test.ts)",
   "agent/runs/[runId]":
-    "reads and cancels one run's own durable ledger; no database or LLM provider (GET/DELETE, no POST export). Its session check is guardRoute, through src/lib/api/agent-run-access.ts",
+    "reads, cancels, pauses and resumes one run's own durable ledger; the resume action drives the run in-process, which reaches a provider, but the route still requires a session (guardRoute, through src/lib/api/agent-run-access.ts)",
   "agent/runs/[runId]/artifacts/[correlationId]":
     "hands back rows one run already stored, from process memory; no database or LLM provider is reached to answer it (GET, no POST export). Same guardRoute path as above, through src/lib/api/agent-run-access.ts, and tests/api/agent/artifacts.test.ts proves an unauthenticated caller gets 401 and reads nothing",
   "agent/runs/[runId]/stream":
@@ -232,6 +247,8 @@ const ROUTES_WITHOUT_A_PROVIDER: Record<string, string> = {
   "auth/oidc/callback": "completes the OIDC exchange that CREATES the session (GET, no POST export)",
   "auth/oidc/login": "starts the OIDC redirect before a session exists (GET, no POST export)",
   "connections/managed": "reads seed config metadata only; never opens a database connection (GET, no POST export)",
+  health:
+    "liveness only: returns a fixed body and touches nothing, so there is no provider to require a session for (GET, no POST export). The connection-scoped check is POST /api/db/health, which is not on this list",
   storage: "reaches the app's own storage backend (STORAGE_PROVIDER), not a user database or LLM provider (GET only)",
   "storage/[collection]": "same storage backend as above, scoped to the caller's own data (PUT, no POST export)",
   "storage/config": "publicly documents whether server storage is enabled; no session, no provider (GET only)",
@@ -263,6 +280,23 @@ describe("routes that reach a provider require a session", () => {
   // Three since #331 T3 removed chat with the in-editor assistant it served, after T2 removed
   // nl2sql, autopilot, impact and index-advisor with their panels: describe-schema, explain,
   // query-safety.
+  test("no route handler outside src/app/api/ escapes this audit unnoticed", () => {
+    const appRoot = join(SRC_ROOT_DIR, "app");
+    const found: string[] = [];
+    const walk = (dir: string, prefix: string) => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        if (prefix === "" && entry.name === "api") continue;
+        const key = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
+        if (existsSync(join(dir, entry.name, "route.ts"))) found.push(key);
+        walk(join(dir, entry.name), key);
+      }
+    };
+    walk(appRoot, "");
+
+    expect(found.sort()).toEqual(ROUTES_OUTSIDE_API);
+  });
+
   test("the same walk finds at least today's three AI routes", () => {
     expect(ALL_ROUTES.filter(([key]) => key.startsWith("ai/")).length).toBeGreaterThanOrEqual(3);
   });
@@ -382,9 +416,11 @@ describe("routes that reach a provider require a session", () => {
     "@/hooks/use-connection-payload": "shapes a connection record for the client; opens nothing",
     "@/lib/agent/config": `reads the agent runtime's env config and ${PROVIDER_NAMING_HELPER} (@/lib/llm/utils/config) to validate the model id, which resolves config rather than calling a model`,
     "@/lib/agent/model-tuning": "the per-model tuning table; data only",
-    "@/lib/agent/runtime": `the run loop, and it ${PROVIDER_NAMING_HELPER} - but the artifacts route imports only readAgentArtifact, which reads the in-process ExecutionArtifactStore`,
+    "@/lib/agent/runtime": `the run loop, and it ${PROVIDER_NAMING_HELPER} - the artifacts route imports only readAgentArtifact (the in-process ExecutionArtifactStore), and agent/runs/[runId] imports driveAgentRun, which the resume action uses to drive the run`,
+    "@/lib/agent/run-service": `the run lifecycle service (pause/unpause/cancel/status), and it ${PROVIDER_NAMING_HELPER} (@/lib/db/operations/execution) - but only for releaseExecutionRun, which releases the run's in-process budget and artifacts, never a database or model`,
     "@/lib/api/agent-run-access": "resolves a run id to its ledger behind guardRoute; reads no provider",
     "@/lib/api/client-address": "parses the forwarded-for chain for the audit record",
+    "@/lib/api/liveness": "builds the fixed liveness body; imports nothing and touches nothing",
     "@/lib/api/errors": `maps a thrown error to a response and ${PROVIDER_NAMING_HELPER} (@/lib/db/errors, @/lib/llm/types) for the error CLASSES alone - nearly every route imports it, and treating it as an entry point would fire on all fifteen`,
     "@/lib/api/rate-limit": "the in-process token buckets",
     "@/lib/api/require-session": "guardRoute itself",
