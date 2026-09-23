@@ -224,10 +224,10 @@ export const WIRE_COMPATIBLE_ENGINES: readonly WireCompatibleEngine[] = [
   {
     name: "RisingWave",
     via: "postgres",
-    tier: "query-only",
-    probedVersion: "RisingWave 3.0.3 (advertises PostgreSQL 13.14.0)",
+    tier: "partial",
+    probedVersion: "RisingWave 3.0.4 (advertises PostgreSQL 13.14.0)",
     caveats: [
-      'The object browser is unavailable: the schema query\'s LEFT JOIN pg_class ON (...)::regclass fails to bind ("missing FROM-clause entry for table c") - a different gap than the MATERIALIZED keyword collision Materialize hits, and not yet worked around.',
+      "The object browser lists tables and columns: RisingWave does not provide the PostgreSQL json type or json_agg()/json_build_object(), but it provides the jsonb equivalents. The schema query falls back to jsonb_agg(), jsonb_build_object() and jsonb casts, so column and type metadata can be read normally.",
       "The monitoring dashboard now loads with every statistic marked unavailable rather than erroring the whole page: RisingWave has no pg statistics catalog at all. Slow-query and active-session panels stay empty (not merely unavailable) because RisingWave also rejects a parameterised LIMIT.",
     ],
   },

@@ -141,9 +141,12 @@ recovers real object-browser data on four independent gaps instead of failing ou
    browser used to read empty even though it happily accepts the `MATERIALIZED` hint — and
    Materialize reaches the same gap once past #1. `withoutTotalRelationSizeFn()` replaces the call
    with a literal `0`, trading per-table size for real column/PK data instead of nothing.
-3. **`json_agg()` / `json_build_object()`.** Materialize has neither, only the `jsonb_` forms
-   (verified: they return the identical shape over the wire — `pg` parses both OIDs into plain JS
-   values). `withoutJsonAggFunctions()` swaps the function names.
+3. **`json_agg()` / `json_build_object()` and the `json` type.** Materialize and RisingWave do not
+   support the PostgreSQL `json` forms used by this query, but both provide the `jsonb_` equivalents.
+   `withoutJsonAggFunctions()` swaps `json_agg()` / `json_build_object()` for
+   `jsonb_agg()` / `jsonb_build_object()` and rewrites the empty `json` casts to `jsonb`.
+   For RisingWave, this restores object-browser column/type reads while preserving the parsed
+   array/object shape consumed by the provider.
 4. **`information_schema.constraint_column_usage`.** Materialize answers `table_constraints` and
    `key_column_usage` but does not implement this one: its catalog ships fourteen
    `information_schema` views and that is not among them, at HEAD as well as at the probed release,
@@ -156,15 +159,17 @@ recovers real object-browser data on four independent gaps instead of failing ou
    three fallbacks above have already rewritten parts of the statement by the time it runs.
 
 Each fallback is matched against whichever error actually comes back, not tried in a fixed order —
-CockroachDB hits #2 as its *first* error with #1 never in play, Materialize hits all three in
-sequence. Real PostgreSQL never takes any retry path; it accepts every construct above and the first
+CockroachDB hits #2 as its *first* error with #1 never in play, while Materialize and RisingWave
+reach the JSON fallback when their respective earlier gaps have been handled. Real PostgreSQL never
+	akes any retry path; it accepts every construct above and the first
 attempt succeeds. An error no fallback recognizes, or one that survives every applicable fallback, is
 mapped through `mapDatabaseError()` and rethrown rather than left raw.
 
 **What still doesn't work.** On Materialize, foreign keys and indexes come back empty (see gap #4);
-sizes are unmeasured (gap #2). RisingWave's object browser remains unavailable for a different,
-unrelated reason: its query binder fails on the `LEFT JOIN pg_class ON (...)::regclass` pattern
-itself (`missing FROM-clause entry for table c`), which none of the four fallbacks above address.
+sizes are unmeasured (gap #2). RisingWave's object browser now works through the JSONB fallback in
+gap #3. Its PostgreSQL-wire catalog has the required column metadata, but the PostgreSQL `json`
+type and `json_*` functions are unavailable; the provider therefore uses the supported `jsonb`
+forms instead.
 
 A statement that never joined the catalog a fallback repairs is *not* retried blind:
 `withoutForeignKeyCatalog()` returns the SQL untouched when there is no `fk_info` CTE to empty

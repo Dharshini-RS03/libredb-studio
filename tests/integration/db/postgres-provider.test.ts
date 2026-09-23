@@ -1802,6 +1802,30 @@ describe("PostgresProvider", () => {
       expect(attempts.length).toBe(5);
       expect(countParens(attempts[4])).toEqual({ balanced: true });
     });
+
+    test("RisingWave falls back from json to jsonb when the json type is unavailable", async () => {
+      const attempts: string[] = [];
+      mockQueryFn = (sql: string) => {
+        attempts.push(sql);
+        if (sql.includes("json_agg(")) {
+          return Promise.reject(new Error("type json does not exist"));
+        }
+        return defaultMockQuery(sql);
+      };
+      provider = new PostgresProvider(makePgConfig());
+      await provider.connect();
+      attempts.length = 0;
+      const schema = await provider.getSchema();
+      expect(schema.length).toBe(2);
+      expect(attempts.length).toBe(2);
+      expect(attempts[0]).toContain("json_agg(");
+      expect(attempts[0]).toContain("json_build_object(");
+      expect(attempts[1]).not.toContain("json_agg(");
+      expect(attempts[1]).not.toContain("json_build_object(");
+      expect(attempts[1]).toContain("jsonb_agg(");
+      expect(attempts[1]).toContain("jsonb_build_object(");
+      expect(countParens(attempts[1])).toEqual({ balanced: true });
+    });
   });
 
   // --------------------------------------------------------------------------

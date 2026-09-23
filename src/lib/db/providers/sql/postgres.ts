@@ -384,16 +384,25 @@ function isMissingTotalRelationSizeError(error: unknown): boolean {
 // Materialize has no json_agg()/json_build_object() - only their jsonb_ equivalents,
 // which return the same array/object shape over the wire (node-postgres parses both
 // the json and jsonb OIDs into plain JS values), so swapping the function name is
-// enough; the '[]'::json casts elsewhere in these queries are unaffected, since the
-// json TYPE itself does exist there.
+// Materialize and RisingWave do not support the PostgreSQL json forms used here;
+// they support the jsonb equivalents instead. The fallback therefore swaps both
+// aggregate/object functions and json type casts to their jsonb equivalents.
 function withoutJsonAggFunctions(sql: string): string {
-  return sql.replace(/\bjson_agg\(/gi, "jsonb_agg(").replace(/\bjson_build_object\(/gi, "jsonb_build_object(");
+  return sql
+    .replace(/\bjson_agg\(/gi, "jsonb_agg(")
+    .replace(/\bjson_build_object\(/gi, "jsonb_build_object(")
+    .replace(/'(\[\])'::json\b/gi, "'$1'::jsonb")
+    .replace(/NULL::json\b/gi, "NULL::jsonb");
 }
 
 function isMissingJsonAggError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
   const message = error.message.toLowerCase();
-  return message.includes("json_agg") || message.includes("json_build_object");
+  return (
+    message.includes("json_agg") ||
+    message.includes("json_build_object") ||
+    message.includes("type json does not exist")
+  );
 }
 
 // Replaces one named CTE's body, matching the closing parenthesis by depth rather
