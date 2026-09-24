@@ -1500,7 +1500,7 @@ describe("PostgresProvider", () => {
     const detailStatements = (sent: readonly string[]): string[] =>
       sent.filter((sql) => sql.includes("described_columns"));
 
-    test("RisingWave falls back from json to jsonb for describeObject()", async() => {
+    test("RisingWave falls back from json to jsonb for describeObject()", async () => {
       const sent: string[] = [];
       let detailAttempts = 0;
       mockQueryFn = (sql: string) => {
@@ -1526,7 +1526,7 @@ describe("PostgresProvider", () => {
       expect(attempts[1]).toContain("jsonb_build_object(");
     });
 
-    test("RisingWave falls back from json to jsonb for describeObjects()", async() => {
+    test("RisingWave falls back from json to jsonb for describeObjects()", async () => {
       const sent = rejectFirst("Failed to bind expression: CAST(NULL AS json)");
       await describeTables();
 
