@@ -1500,19 +1500,49 @@ describe("PostgresProvider", () => {
     const detailStatements = (sent: readonly string[]): string[] =>
       sent.filter((sql) => sql.includes("described_columns"));
 
-    test("json_agg is swapped for jsonb_agg, which returns the same shape over the wire", async () => {
-      // Materialize has only the jsonb_ equivalents, and node-postgres parses both the json
-      // and the jsonb OID into the same plain JS value, so the swap is enough.
-      const sent = rejectFirst('function "json_agg" does not exist');
+    test("RisingWave falls back from json to jsonb for describeObject()", async() => {
+      const sent: string[] = [];
+      let detailAttempts = 0;
+      mockQueryFn = (sql: string) => {
+        sent.push(sql);
+        if (sql.includes("object_columns")) {
+          detailAttempts += 1;
+          if (detailAttempts === 1) {
+            return Promise.reject(new Error("Failed to bind expression: CAST(NULL AS json)"));
+          }
+        }
+        return defaultMockQuery(sql);
+      };
+      provider = new PostgresProvider(makePgConfig());
+      await provider.connect();
+      await provider.describeObject(["public", "users"], "table");
+      const attempts = sent.filter((sql) => sql.includes("object_columns"));
+      expect(attempts).toHaveLength(2);
+      expect(attempts[0]).toContain("'[]'::json");
+      expect(attempts[0]).toContain("json_agg(");
+      expect(attempts[0]).toContain("json_build_object(");
+      expect(attempts[1]).toContain("'[]'::jsonb");
+      expect(attempts[1]).toContain("jsonb_agg(");
+      expect(attempts[1]).toContain("jsonb_build_object(");
+    });
 
+    test("RisingWave falls back from json to jsonb for describeObjects()", async() => {
+      const sent = rejectFirst("Failed to bind expression: CAST(NULL AS json)");
       await describeTables();
 
       const attempts = detailStatements(sent);
-      expect(attempts.length).toBe(2);
+      expect(attempts).toHaveLength(2);
+
       expect(attempts[0]).toContain("json_agg(");
+      expect(attempts[0]).toContain("json_build_object(");
+      expect(attempts[0]).toContain("'[]'::json");
+
       expect(attempts[1]).toContain("jsonb_agg(");
       expect(attempts[1]).toContain("jsonb_build_object(");
-      expect(attempts[1]).not.toContain(" json_agg(");
+      expect(attempts[1]).toContain("'[]'::jsonb");
+
+      expect(attempts[1]).not.toContain("json_agg(");
+      expect(attempts[1]).not.toContain("json_build_object(");
     });
 
     test("a missing pg_total_relation_size() is recognised and the statement retried", async () => {
